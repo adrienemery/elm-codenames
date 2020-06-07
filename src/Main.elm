@@ -2,6 +2,7 @@ module Main exposing (..)
 
 import Browser
 import Color.OneDark as OneDark
+import Debug
 import Element exposing (..)
 import Element.Background as Background
 import Element.Border
@@ -67,6 +68,36 @@ type alias Model =
     }
 
 
+cardColors : List CardColor
+cardColors =
+    [ Red
+    , Yellow
+    , Blue
+    , Blue
+    , Yellow
+    , Blue
+    , Yellow
+    , Red
+    , Red
+    , Blue
+    , Yellow
+    , Red
+    , Blue
+    , Blue
+    , Yellow
+    , Blue
+    , Yellow
+    , Red
+    , Red
+    , Blue
+    , Red
+    , Yellow
+    , Blue
+    , Red
+    , Red
+    ]
+
+
 generateWords : List String
 generateWords =
     let
@@ -79,17 +110,17 @@ generateWords =
     List.concatMap pickWordsForRow rowIndexes
 
 
-buildCard : String -> Card
-buildCard word =
-    { color = Red
-    , word = word
+buildCard : String -> CardColor -> Card
+buildCard word color =
+    { color = color
+    , word = String.toLower word
     , state = Hidden
     }
 
 
 generateCards : List Card
 generateCards =
-    List.map buildCard generateWords
+    List.map2 buildCard generateWords cardColors
 
 
 init : Model
@@ -208,19 +239,29 @@ cardElement model rowNum index card =
         Player ->
             Element.el
                 [ Background.color (getCardColor card model)
-                , centerY
-                , centerX
-                , padding 25
+                , width (px 150)
+                , Font.center
+                , Font.color (Element.rgb 1 1 1)
+                , paddingXY 5 30
                 , onClick (Reveal (rowNum * 5 + index) card)
                 ]
                 (text card.word)
 
         Spy ->
+            let
+                backgroundColor =
+                    if card.state == Visible then
+                        getCardColor card model
+
+                    else
+                        OneDark.gutterGrey
+            in
             Element.el
-                [ Background.color OneDark.gutterGrey
-                , centerY
-                , centerX
-                , padding 20
+                [ Background.color backgroundColor
+                , width (fill |> minimum 150)
+                , Font.center
+                , Font.color (Element.rgb 1 1 1)
+                , paddingXY 5 25
                 , Element.Border.width 5
                 , Element.Border.color (getCardColor card model)
                 , Element.Border.dashed
@@ -258,16 +299,21 @@ view model =
         ]
     <|
         Element.column [ centerX ]
-            [ el [ centerX, padding 50 ] (text "CODENAMES")
+            [ el [ centerX, padding 40 ] (text "CODENAMES")
 
             -- Top Controls
-            , Element.row [ width fill, padding 10 ]
-                [ el [ Font.color OneDark.lightRed ] (text ("Red: " ++ String.fromInt model.redCardsLeft))
+            , Element.row [ padding 10, width fill ]
+                -- Left
+                [ el [ Font.color OneDark.lightRed, alignLeft ] (text ("Red: " ++ String.fromInt model.redCardsLeft))
                 , el [] (text " | ")
                 , el [ Font.color OneDark.blue ] (text ("Blue: " ++ String.fromInt model.blueCardsLeft))
+
+                -- Center
                 , el [ centerX ]
                     (text (whosTurnString model.whosTurn))
-                , Input.button [ Background.color OneDark.blue, Font.color OneDark.lightYellow, padding 5 ]
+
+                -- Right
+                , Input.button [ Background.color OneDark.blue, Font.color OneDark.lightYellow, padding 10, alignRight ]
                     { onPress = Just ToggleTurn
                     , label = text "End Turn"
                     }
@@ -281,12 +327,13 @@ view model =
             , cardRow 4 model
 
             -- Bottom Controls
-            , Element.row [ width fill, padding 10, spacing 10 ]
-                [ Input.button [ Background.color OneDark.blue, Font.color OneDark.lightYellow, padding 5, alignRight ]
+            , Element.row [ width fill, padding 10, spacing 5 ]
+                [ Input.button [ Background.color OneDark.blue, Font.color OneDark.lightYellow, padding 10, alignRight ]
                     { onPress = Just (ChangeMode Player)
                     , label = text "Player"
                     }
-                , Input.button [ Background.color OneDark.blue, Font.color OneDark.lightYellow, padding 5 ]
+                , el [] (text " | ")
+                , Input.button [ Background.color OneDark.blue, Font.color OneDark.lightYellow, padding 10 ]
                     { onPress = Just (ChangeMode Spy)
                     , label = text "Spy"
                     }
