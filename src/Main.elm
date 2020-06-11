@@ -1,8 +1,8 @@
 module Main exposing (..)
 
+import Array exposing (Array)
 import Browser
 import Color.OneDark as OneDark
-import Debug
 import Element exposing (..)
 import Element.Background as Background
 import Element.Border
@@ -10,6 +10,7 @@ import Element.Events exposing (onClick)
 import Element.Font as Font
 import Element.Input as Input
 import Html exposing (Html)
+import Random
 import Words exposing (words)
 
 
@@ -25,19 +26,16 @@ main =
 -- MODEL
 
 
-type Mode
+type PlayerMode
     = Spy
     | Player
 
 
-type Status
-    = Started
-    | GameOver
-
-
-type WhosTurn
+type GameState
     = RedsTurn
     | BluesTurn
+    | BlueWins
+    | RedWins
 
 
 type CardColor
@@ -59,55 +57,72 @@ type alias Card =
 
 
 type alias Model =
-    { status : Status
-    , mode : Mode
-    , whosTurn : WhosTurn
+    { state : GameState
+    , mode : PlayerMode
     , redCardsLeft : Int
     , blueCardsLeft : Int
     , cards : List Card
+    , seed : Random.Seed
     }
 
 
-cardColors : List CardColor
+cardColors : Array CardColor
 cardColors =
-    [ Red
-    , Yellow
-    , Blue
-    , Blue
-    , Yellow
-    , Blue
-    , Yellow
-    , Red
-    , Red
-    , Blue
-    , Yellow
-    , Red
-    , Blue
-    , Blue
-    , Yellow
-    , Blue
-    , Yellow
-    , Red
-    , Red
-    , Blue
-    , Red
-    , Yellow
-    , Blue
-    , Red
-    , Red
-    ]
+    List.repeat 9 Red
+        |> List.append (List.repeat 8 Blue)
+        |> List.append (List.repeat 8 Yellow)
+        |> Array.fromList
 
 
-generateWords : List String
-generateWords =
+generateRandomIndexes : Random.Seed -> List Int -> Int -> List Int
+generateRandomIndexes seed indexes maxSize =
     let
-        rowIndexes =
-            List.range 0 4
+        ( index, newSeed ) =
+            Random.step (Random.int 0 maxSize) seed
 
-        pickWordsForRow rowIndex =
-            List.drop (rowIndex * 5) words |> List.take 5
+        newIndexes =
+            indexes ++ [ index ]
     in
-    List.concatMap pickWordsForRow rowIndexes
+    if List.member index indexes then
+        generateRandomIndexes newSeed indexes maxSize
+
+    else if List.length newIndexes < 25 then
+        generateRandomIndexes newSeed newIndexes maxSize
+
+    else
+        newIndexes
+
+
+pickWord : Int -> String
+pickWord index =
+    case Array.get index words of
+        Nothing ->
+            "***Error***"
+
+        Just word ->
+            word
+
+
+generateWords : Random.Seed -> List String
+generateWords seed =
+    generateRandomIndexes seed [] (Array.length words)
+        |> List.map pickWord
+
+
+pickColor : Int -> CardColor
+pickColor index =
+    case Array.get index cardColors of
+        Nothing ->
+            Yellow
+
+        Just color ->
+            color
+
+
+generateColors : Random.Seed -> List CardColor
+generateColors seed =
+    generateRandomIndexes seed [] (Array.length cardColors)
+        |> List.map pickColor
 
 
 buildCard : String -> CardColor -> Card
@@ -118,19 +133,19 @@ buildCard word color =
     }
 
 
-generateCards : List Card
-generateCards =
-    List.map2 buildCard generateWords cardColors
+generateCards : Random.Seed -> List Card
+generateCards seed =
+    List.map2 buildCard (generateWords seed) (generateColors seed)
 
 
 init : Model
 init =
-    { status = Started
+    { state = RedsTurn
     , mode = Player
-    , whosTurn = RedsTurn
     , redCardsLeft = 9
     , blueCardsLeft = 8
-    , cards = generateCards
+    , cards = generateCards (Random.initialSeed 14241241243)
+    , seed = Random.initialSeed 141241242
     }
 
 
@@ -141,7 +156,7 @@ init =
 type Msg
     = Reveal Int Card
     | ToggleTurn
-    | ChangeMode Mode
+    | ChangeMode PlayerMode
 
 
 toggleCard : Int -> Int -> Card -> Card
@@ -153,6 +168,73 @@ toggleCard toggleIndex index card =
         card
 
 
+updateCardCount : Card -> Model -> Model
+updateCardCount card model =
+    { model
+        | redCardsLeft =
+            if card.color == Red && card.state == Hidden then
+                model.redCardsLeft - 1
+
+            else
+                model.redCardsLeft
+        , blueCardsLeft =
+            if card.color == Blue && card.state == Hidden then
+                model.blueCardsLeft - 1
+
+            else
+                model.blueCardsLeft
+    }
+
+
+updateGameState : Card -> Model -> Model
+updateGameState card model =
+    { model
+        | state =
+            if model.blueCardsLeft == 0 then
+                BlueWins
+
+            else if model.redCardsLeft == 0 then
+                RedWins
+
+            else if model.state == BluesTurn then
+                case card.color of
+                    Blue ->
+                        BluesTurn
+
+                    Red ->
+                        RedsTurn
+
+                    Yellow ->
+                        BluesTurn
+
+            else if model.state == RedsTurn then
+                case card.color of
+                    Blue ->
+                        RedsTurn
+
+                    Red ->
+                        BluesTurn
+
+                    Yellow ->
+                        RedsTurn
+
+            else
+                model.state
+    }
+
+
+updatePlayerMode : Model -> Model
+updatePlayerMode model =
+    { model
+        | mode =
+            if model.state == RedWins || model.state == BlueWins then
+                Spy
+
+            else
+                model.mode
+    }
+
+
 update : Msg -> Model -> Model
 update msg model =
     case msg of
@@ -161,52 +243,24 @@ update msg model =
 
         ToggleTurn ->
             { model
-                | whosTurn =
-                    case model.whosTurn of
-                        RedsTurn ->
-                            BluesTurn
+                | state =
+                    if model.state == RedsTurn then
+                        BluesTurn
 
-                        BluesTurn ->
-                            RedsTurn
+                    else if model.state == BluesTurn then
+                        RedsTurn
+
+                    else
+                        model.state
             }
 
         Reveal index card ->
             case model.mode of
                 Player ->
-                    { model
-                        | cards = List.indexedMap (toggleCard index) model.cards
-                        , whosTurn =
-                            if card.state == Hidden then
-                                case card.color of
-                                    Red ->
-                                        RedsTurn
-
-                                    Blue ->
-                                        BluesTurn
-
-                                    Yellow ->
-                                        case model.whosTurn of
-                                            RedsTurn ->
-                                                BluesTurn
-
-                                            BluesTurn ->
-                                                RedsTurn
-
-                            else
-                                model.whosTurn
-                        , redCardsLeft =
-                            if card.color == Red && card.state == Hidden then
-                                model.redCardsLeft - 1
-
-                            else
-                                model.redCardsLeft
-                        , blueCardsLeft =
-                            if card.color == Blue && card.state == Hidden then
-                                model.blueCardsLeft - 1
-
-                            else
-                                model.blueCardsLeft
-                    }
+                    { model | cards = List.indexedMap (toggleCard index) model.cards }
+                        |> updateCardCount card
+                        |> updateGameState card
+                        |> updatePlayerMode
 
                 Spy ->
                     model
@@ -269,14 +323,20 @@ cardElement model rowNum index card =
                 (text card.word)
 
 
-whosTurnString : WhosTurn -> String
-whosTurnString whosTurn =
-    case whosTurn of
+whosTurnString : GameState -> String
+whosTurnString state =
+    case state of
         RedsTurn ->
             "Red's Turn"
 
         BluesTurn ->
             "Blue's Turn"
+
+        BlueWins ->
+            "Blue Wins!!!!"
+
+        RedWins ->
+            "Red Wins!!!!"
 
 
 getRowOfCards : Int -> List Card -> List Card
@@ -304,19 +364,24 @@ view model =
             -- Top Controls
             , Element.row [ padding 10, width fill ]
                 -- Left
-                [ el [ Font.color OneDark.lightRed, alignLeft ] (text ("Red: " ++ String.fromInt model.redCardsLeft))
-                , el [] (text " | ")
-                , el [ Font.color OneDark.blue ] (text ("Blue: " ++ String.fromInt model.blueCardsLeft))
+                [ Element.row [ width (fill |> maximum 150) ]
+                    [ el [ Font.color OneDark.lightRed, alignLeft ] (text ("Red: " ++ String.fromInt model.redCardsLeft))
+                    , el [] (text " | ")
+                    , el [ Font.color OneDark.blue ] (text ("Blue: " ++ String.fromInt model.blueCardsLeft))
+                    ]
 
                 -- Center
                 , el [ centerX ]
-                    (text (whosTurnString model.whosTurn))
+                    (text (whosTurnString model.state))
 
                 -- Right
-                , Input.button [ Background.color OneDark.blue, Font.color OneDark.lightYellow, padding 10, alignRight ]
-                    { onPress = Just ToggleTurn
-                    , label = text "End Turn"
-                    }
+                , Element.row
+                    [ width (fill |> maximum 150) ]
+                    [ Input.button [ Background.color OneDark.blue, Font.color OneDark.lightYellow, padding 10, alignRight ]
+                        { onPress = Just ToggleTurn
+                        , label = text "End Turn"
+                        }
+                    ]
                 ]
 
             -- Rows of Cards
