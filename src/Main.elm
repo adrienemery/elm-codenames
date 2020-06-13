@@ -19,7 +19,21 @@ import Words exposing (words)
 
 
 main =
-    Browser.sandbox { init = init, update = update, view = view }
+    Browser.element
+        { init = init
+        , update = update
+        , subscriptions = subscriptions
+        , view = view
+        }
+
+
+
+-- SUBSCRIPTIONS
+
+
+subscriptions : Model -> Sub Msg
+subscriptions _ =
+    Sub.none
 
 
 
@@ -42,6 +56,7 @@ type CardColor
     = Red
     | Blue
     | Yellow
+    | Black
 
 
 type CardState
@@ -70,7 +85,8 @@ cardColors : Array CardColor
 cardColors =
     List.repeat 9 Red
         |> List.append (List.repeat 8 Blue)
-        |> List.append (List.repeat 8 Yellow)
+        |> List.append (List.repeat 7 Yellow)
+        |> List.append (List.repeat 1 Black)
         |> Array.fromList
 
 
@@ -154,15 +170,21 @@ generateCards seed =
     ( List.map2 buildCard randomWords randomColors, newSeed )
 
 
-init : Model
-init =
-    { state = RedsTurn
-    , mode = Player
-    , redCardsLeft = 9
-    , blueCardsLeft = 8
-    , cards = Tuple.first (generateCards (Random.initialSeed 14241241243))
-    , seed = Random.initialSeed 141241242
-    }
+init : Int -> ( Model, Cmd Msg )
+init seedValue =
+    let
+        ( initialCards, newSeed ) =
+            generateCards (Random.initialSeed seedValue)
+    in
+    ( { state = RedsTurn
+      , mode = Player
+      , redCardsLeft = 9
+      , blueCardsLeft = 8
+      , cards = initialCards
+      , seed = newSeed
+      }
+    , Cmd.none
+    )
 
 
 
@@ -207,10 +229,10 @@ updateGameState : Card -> Model -> Model
 updateGameState card model =
     { model
         | state =
-            if model.blueCardsLeft == 0 then
+            if model.blueCardsLeft <= 0 then
                 BlueWins
 
-            else if model.redCardsLeft == 0 then
+            else if model.redCardsLeft <= 0 then
                 RedWins
 
             else if model.state == BluesTurn then
@@ -222,18 +244,24 @@ updateGameState card model =
                         RedsTurn
 
                     Yellow ->
-                        BluesTurn
+                        RedsTurn
+
+                    Black ->
+                        RedWins
 
             else if model.state == RedsTurn then
                 case card.color of
                     Blue ->
-                        RedsTurn
-
-                    Red ->
                         BluesTurn
 
-                    Yellow ->
+                    Red ->
                         RedsTurn
+
+                    Yellow ->
+                        BluesTurn
+
+                    Black ->
+                        BlueWins
 
             else
                 model.state
@@ -252,7 +280,7 @@ updatePlayerMode model =
     }
 
 
-update : Msg -> Model -> Model
+update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         NewGame ->
@@ -260,16 +288,26 @@ update msg model =
                 ( newCards, newSeed ) =
                     generateCards model.seed
             in
-            { model
+            ( { model
                 | cards = newCards
                 , seed = newSeed
-            }
+                , state = RedsTurn
+                , mode = Player
+                , redCardsLeft = 9
+                , blueCardsLeft = 8
+              }
+            , Cmd.none
+            )
 
         ChangeMode newMode ->
-            { model | mode = newMode }
+            ( { model
+                | mode = newMode
+              }
+            , Cmd.none
+            )
 
         ToggleTurn ->
-            { model
+            ( { model
                 | state =
                     if model.state == RedsTurn then
                         BluesTurn
@@ -279,18 +317,22 @@ update msg model =
 
                     else
                         model.state
-            }
+              }
+            , Cmd.none
+            )
 
         Reveal index card ->
             case model.mode of
                 Player ->
-                    { model | cards = List.indexedMap (toggleCard index) model.cards }
+                    ( { model | cards = List.indexedMap (toggleCard index) model.cards }
                         |> updateCardCount card
                         |> updateGameState card
                         |> updatePlayerMode
+                    , Cmd.none
+                    )
 
                 Spy ->
-                    model
+                    ( model, Cmd.none )
 
 
 
@@ -304,14 +346,19 @@ getCardColor card model =
     if card.state == Hidden && model.mode == Player then
         OneDark.gutterGrey
 
-    else if card.color == Red then
-        OneDark.darkRed
-
-    else if card.color == Blue then
-        OneDark.blue
-
     else
-        OneDark.lightYellow
+        case card.color of
+            Red ->
+                OneDark.darkRed
+
+            Blue ->
+                OneDark.blue
+
+            Yellow ->
+                OneDark.lightYellow
+
+            Black ->
+                OneDark.magenta
 
 
 cardElement : Model -> Int -> Int -> Card -> Element.Element Msg
