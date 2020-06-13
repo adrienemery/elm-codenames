@@ -74,23 +74,24 @@ cardColors =
         |> Array.fromList
 
 
-generateRandomIndexes : Random.Seed -> List Int -> Int -> List Int
+generateRandomIndexes : Random.Seed -> List Int -> Int -> ( List Int, Random.Seed )
 generateRandomIndexes seed indexes maxSize =
     let
         ( index, newSeed ) =
             Random.step (Random.int 0 maxSize) seed
 
         newIndexes =
-            indexes ++ [ index ]
-    in
-    if List.member index indexes then
-        generateRandomIndexes newSeed indexes maxSize
+            if List.member index indexes then
+                indexes
 
-    else if List.length newIndexes < 25 then
+            else
+                indexes ++ [ index ]
+    in
+    if List.length newIndexes < 25 then
         generateRandomIndexes newSeed newIndexes maxSize
 
     else
-        newIndexes
+        ( newIndexes, newSeed )
 
 
 pickWord : Int -> String
@@ -103,10 +104,15 @@ pickWord index =
             word
 
 
-generateWords : Random.Seed -> List String
+generateWords : Random.Seed -> ( Random.Seed, List String )
 generateWords seed =
-    generateRandomIndexes seed [] (Array.length words)
+    let
+        ( indexes, newSeed ) =
+            generateRandomIndexes seed [] (Array.length words)
+    in
+    indexes
         |> List.map pickWord
+        |> Tuple.pair newSeed
 
 
 pickColor : Int -> CardColor
@@ -121,8 +127,11 @@ pickColor index =
 
 generateColors : Random.Seed -> List CardColor
 generateColors seed =
-    generateRandomIndexes seed [] (Array.length cardColors)
-        |> List.map pickColor
+    let
+        ( indexes, _ ) =
+            generateRandomIndexes seed [] (Array.length cardColors)
+    in
+    List.map pickColor indexes
 
 
 buildCard : String -> CardColor -> Card
@@ -133,9 +142,16 @@ buildCard word color =
     }
 
 
-generateCards : Random.Seed -> List Card
+generateCards : Random.Seed -> ( List Card, Random.Seed )
 generateCards seed =
-    List.map2 buildCard (generateWords seed) (generateColors seed)
+    let
+        ( newSeed, randomWords ) =
+            generateWords seed
+
+        randomColors =
+            generateColors seed
+    in
+    ( List.map2 buildCard randomWords randomColors, newSeed )
 
 
 init : Model
@@ -144,7 +160,7 @@ init =
     , mode = Player
     , redCardsLeft = 9
     , blueCardsLeft = 8
-    , cards = generateCards (Random.initialSeed 14241241243)
+    , cards = Tuple.first (generateCards (Random.initialSeed 14241241243))
     , seed = Random.initialSeed 141241242
     }
 
@@ -157,6 +173,7 @@ type Msg
     = Reveal Int Card
     | ToggleTurn
     | ChangeMode PlayerMode
+    | NewGame
 
 
 toggleCard : Int -> Int -> Card -> Card
@@ -238,6 +255,16 @@ updatePlayerMode model =
 update : Msg -> Model -> Model
 update msg model =
     case msg of
+        NewGame ->
+            let
+                ( newCards, newSeed ) =
+                    generateCards model.seed
+            in
+            { model
+                | cards = newCards
+                , seed = newSeed
+            }
+
         ChangeMode newMode ->
             { model | mode = newMode }
 
@@ -401,6 +428,11 @@ view model =
                 , Input.button [ Background.color OneDark.blue, Font.color OneDark.lightYellow, padding 10 ]
                     { onPress = Just (ChangeMode Spy)
                     , label = text "Spy"
+                    }
+                , el [] (text " | ")
+                , Input.button [ Background.color OneDark.blue, Font.color OneDark.lightYellow, padding 10 ]
+                    { onPress = Just NewGame
+                    , label = text "New Game"
                     }
                 ]
             ]
