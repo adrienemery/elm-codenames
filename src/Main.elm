@@ -124,7 +124,7 @@ generateWords : Random.Seed -> ( Random.Seed, List String )
 generateWords seed =
     let
         ( indexes, newSeed ) =
-            generateRandomIndexes seed [] (Array.length words)
+            generateRandomIndexes seed [] (Array.length words - 1)
     in
     indexes
         |> List.map pickWord
@@ -145,7 +145,7 @@ generateColors : Random.Seed -> List CardColor
 generateColors seed =
     let
         ( indexes, _ ) =
-            generateRandomIndexes seed [] (Array.length cardColors)
+            generateRandomIndexes seed [] (Array.length cardColors - 1)
     in
     List.map pickColor indexes
 
@@ -272,11 +272,18 @@ updatePlayerMode : Model -> Model
 updatePlayerMode model =
     { model
         | mode =
-            if model.state == RedWins || model.state == BlueWins then
-                Spy
+            case model.state of
+                RedWins ->
+                    Spy
 
-            else
-                model.mode
+                BlueWins ->
+                    Spy
+
+                BluesTurn ->
+                    model.mode
+
+                RedsTurn ->
+                    model.mode
     }
 
 
@@ -309,14 +316,18 @@ update msg model =
         ToggleTurn ->
             ( { model
                 | state =
-                    if model.state == RedsTurn then
-                        BluesTurn
+                    case model.state of
+                        RedsTurn ->
+                            BluesTurn
 
-                    else if model.state == BluesTurn then
-                        RedsTurn
+                        BluesTurn ->
+                            RedsTurn
 
-                    else
-                        model.state
+                        RedWins ->
+                            model.state
+
+                        BlueWins ->
+                            model.state
               }
             , Cmd.none
             )
@@ -378,11 +389,12 @@ cardElement model rowNum index card =
         Spy ->
             let
                 backgroundColor =
-                    if card.state == Visible then
-                        getCardColor card model
+                    case card.state of
+                        Visible ->
+                            getCardColor card model
 
-                    else
-                        OneDark.gutterGrey
+                        Hidden ->
+                            OneDark.gutterGrey
             in
             Element.el
                 [ Background.color backgroundColor
